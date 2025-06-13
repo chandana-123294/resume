@@ -1,0 +1,119 @@
+{
+  "name": "HR Intelligent Leave Management",
+  "nodes": [
+    {
+      "parameters": {
+        "email": "=msg.payload.headers.from",
+        "text": "=msg.payload.text",
+        "subject": "=msg.payload.subject"
+      },
+      "name": "Extract Email Data",
+      "type": "n8n-nodes-base.emailReadImap",
+      "typeVersion": 1,
+      "position": [
+        200,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const leaveRegex = /leave from (\\d{4}-\\d{2}-\\d{2}) to (\\d{4}-\\d{2}-\\d{2})/i;\nconst match = leaveRegex.exec($json[\"text\"]);\nif (match) {\n  return [{\n    json: {\n      startDate: match[1],\n      endDate: match[2],\n      email: $json[\"email\"]\n    }\n  }];\n}\nreturn [{ json: { error: \"Could not parse dates\" } }];"
+      },
+      "name": "Parse Leave Request",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        400,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "sheetId": "your_google_sheet_id",
+        "range": "LeaveBalance!A2:C",
+        "valueRenderMode": "FORMATTED_VALUE"
+      },
+      "name": "Fetch Leave Balance",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        600,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const [record] = items;\nconst leaveBalanceRow = record.json.data.find(row => row[0] === record.json.email);\nif (!leaveBalanceRow) return [{ json: { decision: \"Rejected\", reason: \"Email not found in HR sheet.\" } }];\n\nconst availableLeaves = parseInt(leaveBalanceRow[2]);\nconst daysRequested = Math.ceil((new Date(record.json.endDate) - new Date(record.json.startDate)) / (1000 * 60 * 60 * 24)) + 1;\n\nconst approved = daysRequested <= availableLeaves;\n\nreturn [{\n  json: {\n    decision: approved ? \"Approved\" : \"Rejected\",\n    email: record.json.email,\n    daysRequested,\n    availableLeaves,\n    reason: approved ? \"Sufficient leave balance\" : \"Insufficient leave balance\"\n  }\n}];"
+      },
+      "name": "Decision Logic",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        800,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "hr@company.com",
+        "toEmail": "={{$json.email}}",
+        "subject": "Leave Request Status",
+        "text": "={{\"Your leave request has been \" + $json.decision + \". Reason: \" + $json.reason}}"
+      },
+      "name": "Send Response Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 1,
+      "position": [
+        1000,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Extract Email Data": {
+      "main": [
+        [
+          {
+            "node": "Parse Leave Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Leave Request": {
+      "main": [
+        [
+          {
+            "node": "Fetch Leave Balance",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Leave Balance": {
+      "main": [
+        [
+          {
+            "node": "Decision Logic",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decision Logic": {
+      "main": [
+        [
+          {
+            "node": "Send Response Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

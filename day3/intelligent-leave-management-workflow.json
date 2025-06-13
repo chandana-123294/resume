@@ -1,0 +1,158 @@
+{
+  "name": "Intelligent Leave Management",
+  "nodes": [
+    {
+      "parameters": {
+        "triggerOn": "new_email",
+        "options": {
+          "unreadOnly": true,
+          "label": "INBOX",
+          "filters": {}
+        }
+      },
+      "id": "GmailTrigger",
+      "name": "Gmail Trigger",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1,
+      "position": [
+        250,
+        150
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o-mini",
+        "systemPrompt": "Extract leave request info: employee name, leave type, start date, end date",
+        "input": "={{$json[\"textPlain\"]}}"
+      },
+      "id": "AIParse",
+      "name": "AI: Parse Leave Request",
+      "type": "n8n-nodes-base.aiAgent",
+      "typeVersion": 1,
+      "position": [
+        500,
+        150
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "sheetId": "<YOUR_SHEET_ID>",
+        "range": "Balances!A:D",
+        "options": {}
+      },
+      "id": "SheetsRead",
+      "name": "Google Sheets: Read Balances",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        750,
+        150
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$node[\"AIParse\"].json[\"leaveDays\"]}}",
+              "value2": "={{$json[\"balance\"]}}",
+              "operation": "lessEqual"
+            }
+          ]
+        }
+      },
+      "id": "CheckBalance",
+      "name": "Check Balance",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        1000,
+        150
+      ]
+    },
+    {
+      "parameters": {
+        "toEmail": "={{$json[\"fromEmail\"]}}",
+        "subject": "Leave Request Approved",
+        "body": "Hello {{$json[\"employeeName\"]}},\n\nYour leave from {{$json[\"startDate\"]}} to {{$json[\"endDate\"]}} has been *approved*. Enjoy!\n\nBest,\nHR Team"
+      },
+      "id": "GmailApprove",
+      "name": "Gmail Send: Approve",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 1,
+      "position": [
+        1250,
+        50
+      ]
+    },
+    {
+      "parameters": {
+        "toEmail": "={{$json[\"fromEmail\"]}}",
+        "subject": "Leave Request Rejected",
+        "body": "Hello {{$json[\"employeeName\"]}},\n\nUnfortunately, you don\u2019t have enough leave balance for {{$json[\"leaveDays\"]}} days. Current balance: {{$json[\"balance\"]}} days.\n\nPlease adjust your request or contact HR.\n\nBest,\nHR Team"
+      },
+      "id": "GmailReject",
+      "name": "Gmail Send: Reject",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 1,
+      "position": [
+        1250,
+        250
+      ]
+    }
+  ],
+  "connections": {
+    "Gmail Trigger": {
+      "main": [
+        [
+          {
+            "node": "AI: Parse Leave Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI: Parse Leave Request": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets: Read Balances",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Sheets: Read Balances": {
+      "main": [
+        [
+          {
+            "node": "Check Balance",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Balance": {
+      "main": [
+        [
+          {
+            "node": "Gmail Send: Approve",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Gmail Send: Reject",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    }
+  }
+}
